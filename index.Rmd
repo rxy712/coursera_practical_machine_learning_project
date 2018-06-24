@@ -1,0 +1,107 @@
+---
+title: "PML course project"
+author: "XR"
+date: "June 24, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Aim
+
+In this project, the goal is to use weight lifting exercise data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to find patterns in their behavior, and to predict the manner in which they did the exercise.  
+
+# Data 
+
+I have downloaded the training data, pml-training.csv, and the testing data, pml-testing.csv, according to the instruction on the course project website.
+
+# Methods and Results 
+I first loaded the libraries that are needed.
+
+```{r}
+library(caret)
+```
+
+I then read in the data sets, removed variables with large amount of missing values in both the training and testing sets, and removed covariates that have near zero variance or seem to be less important or unrelated.
+
+```{r}
+train <- read.csv("pml-training.csv")
+test <- read.csv("pml-testing.csv")
+dim(train)
+dim(test)
+table(train$classe)
+
+#remove variables with many missing values in both data sets.
+testdata <- test[, colSums(is.na(test)) != nrow(test)]
+dim(testdata)
+traindata <- train[, colnames(train) %in% c(colnames(testdata), "classe")]
+dim(traindata)
+checkNA.train <- apply(traindata, 2, function(x) sum(is.na(x)))
+checkNA.test <- apply(testdata, 2, function(x) sum(is.na(x)))
+#no missing values left
+
+#remove the only covariate that has near zero variance, new_window. 
+nearZeroVar(traindata, saveMetrics=TRUE)
+
+#remove some variables that seem to be less important/unrelated
+rmvar <- c("X","user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","new_window")
+traindata <- traindata[, !(colnames(traindata) %in% rmvar)]
+testdata <- testdata[, !(colnames(testdata) %in% rmvar)]
+```
+
+I further separated the trainig data into a sub-training and sub-testing sets so that we are able to evaluate our model by generating prediction accuracy. 
+
+```{r}
+#separate the traindata to train and test data sets 
+set.seed(12345)
+index <- createDataPartition(y=traindata$classe, p=0.75, list=FALSE)
+train1 <- traindata[index, ]
+test1 <- traindata[-index, ]
+dim(train1)
+dim(test1)
+```
+
+
+I learned from the course that random forest and boosting are usually the top two performing algorithms in prediction contests and are often very accurate, therefore I tried these two methods as below. For random forest, I used 10-fold cross validation.
+
+```{r}
+##### random forest
+ctrl <- trainControl(method="cv", classProbs=TRUE, number=10)
+set.seed(12345)
+mod.rf <- train(classe~., data=train1, method="rf", prox=TRUE, preProc=c("center", "scale"), ntree=500, importance=TRUE, trControl=ctrl)
+mod.rf$finalModel
+pred.rf <- predict(mod.rf, test1)
+confusionMatrix(pred.rf, test1$classe)
+
+##### boosting with trees
+set.seed(12345)
+mod.gbm <- train(classe~., data=train1, method="gbm", verbose=FALSE, preProc=c("center", "scale"))
+pred.gbm <- predict(mod.gbm, test1)
+confusionMatrix(pred.gbm, test1$classe)
+```
+
+From the results above, we can tell that both methods are very accurate (Accuracy of 0.9965 for random forest and 0.9882 for boosting with trees, and therefore the out-of-sample error is 0.0035 for random forest and 0.0118 for boosting with trees). In order to predict on the pml testdata, I just used random forest that has higher accuracy.
+
+
+Finally, I predicted the random forest model on the pml-testing data set, and generated prediction values.
+
+```{r}
+#predict on the pml test data
+testdata2 <- testdata[, colnames(testdata) != "problem_id"]
+predict.values <- predict(mod.rf, testdata2)
+out <- data.frame(problem_id=testdata[,"problem_id"], predict.values)
+out
+write.csv(out,"predict_result.csv", row.names=F)
+```
+
+
+# Working environment
+
+This analysis was run in the following software environment:
+```{r, echo=FALSE}
+sessionInfo()
+```
+
+
